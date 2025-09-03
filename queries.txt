@@ -1,0 +1,468 @@
+==============================================================================================
+1. Find all quasar galaxies, which have radius < 40 000.
+
+IN ->:
+db.galaxies.aggregate([
+  // Find all quasars
+  { $match: { "type": { $in: [ "Quasar" ] } } },
+
+  // Find all galaxies with radius lesser than 40000
+  { $match: { "radius": { $lt: 40000 } } },
+
+  // Display relevant fields
+  { $project: { _id: 0, name: 1, type: 1 } },
+])
+
+-> OUT:
+[
+  { name: 'NGC 1300', type: [ 'Quasar', 'Elliptical' ] },
+  { name: 'NGC 1705', type: [ 'Quasar' ] }
+]
+
+==============================================================================================
+2. Find largest recorded black hole in Milky Way.
+
+IN ->:
+db.black_holes.aggregate([
+
+  // Join 'galaxies' collection from 'black_holes' collections using 'galaxy_id'
+  {
+    $lookup: {
+      from: "galaxies",
+      localField: "galaxy_id",
+      foreignField: "_id",
+      as: "corresponding_galaxy"
+    }
+  },
+
+  // Show only black holes that are located in Milky Way
+  { $match: { "corresponding_galaxy.name": "Milky Way" } },
+
+  // Sort in descending order
+  { $sort: { weight: -1 } },
+
+  // Display the heaviest black hole
+  { $limit: 1 },
+
+  // Display relevant fields
+  { $project: {_id: 0, name: 1, weight: 1 } }
+])
+
+-> OUT:
+[ { name: 'Sagittarius A*', weight: 4100000 } ]
+
+==============================================================================================
+3. Display galaxies, that does not contain any records about black holes.
+
+IN ->:
+db.galaxies.aggregate([
+  // Join 'black_holes' collection from 'galaxies' collections using 'galaxy_id'
+  {
+    $lookup: {
+      from: "black_holes",
+      localField: "_id",
+      foreignField: "galaxy_id",
+      as: "corresponding_black_holes"
+    }
+  },
+  
+  // Select galaxies, that do not contain records about black holes
+  { $match: { "corresponding_black_holes": { $size: 0 } } },
+
+  // Display relevant fields
+  { $project: { _id: 0, name: 1 } },
+])
+
+-> OUT:
+[
+  { name: 'Pinwheel' },
+  { name: 'Messier 87' },
+  { name: 'Whirlpool' },
+  { name: 'NGC 224' },
+  { name: 'NGC 2336' }
+]
+
+==============================================================================================
+4. What galaxy type is Andromeda?
+
+IN ->:
+db.galaxies.find({
+  name: "Andromeda"
+}).next().type
+
+-> OUT:
+[ 'Spiral' ]
+
+==============================================================================================
+5. Find lightest black hole of 'Stellar' type.
+
+IN ->:
+db.black_holes.aggregate([
+
+  // Find black holes of 'Stellar' type
+  { $match: { "type": "Stellar" } },
+
+  // Sort in ascending order
+  { $sort: { weight: 1 } },
+
+  // Display the heaviest black hole
+  { $limit: 1 },
+
+  // Display relevant fields
+  { $project: { _id: 0, name: 1, weight: 1} },
+])
+
+-> OUT:
+[ { name: 'XTE J1650-500', weight: 7 } ]
+
+==============================================================================================
+6. Find space "address" of Earth.
+
+IN ->:
+db.stars.aggregate([
+
+  // Join 'galaxies' from 'stars' using 'galaxy_id'
+  {
+    $lookup: {
+      from: "galaxies",
+      localField: "galaxy_id",
+      foreignField: "_id",
+      as: "corresponding_galaxy"
+    }
+  },
+
+  // Split planets list into star-planet objects
+  { $unwind: "$planets" },
+
+  // Select stars, which contain planet named Earth
+  { $match: { "planets.name": "Earth" } },
+
+  // Print Earth's "address"
+  { $project: {_id: 0, galaxy: "$corresponding_galaxy.name", star: "$name", planet: "$planets.name"} }
+])
+
+-> OUT:
+[ { galaxy: [ 'Milky Way' ], star: 'Sun', planet: 'Earth' } ]
+
+==============================================================================================
+7. In 2006 'Pluto' was removed from list of 'Sun' planets. Return it to the database.
+
+IN ->:
+db.stars.updateOne(
+  { name: "Sun" },
+  {
+    $push: {
+      planets: {
+        name: "Pluto", 
+        radius: 0.00000000238, 
+        weight: 0.000000013, 
+        type: "Terrestrial", 
+        moons: ["Charon"]
+      }
+    }
+  }
+)
+
+-> OUT:
+{
+  acknowledged: true,
+  insertedId: null,
+  matchedCount: 1,
+  modifiedCount: 1,
+  upsertedCount: 0
+}
+
+==============================================================================================
+8. Display all planets in solar system, with more than 1 moon recorded.
+
+IN ->:
+db.stars.aggregate([
+
+  // Choosing only Sun
+  { $match: { "name": "Sun" } },
+
+  // Splitting planets list into separate star-planet objects
+  { $unwind: "$planets" },
+
+  // Match planets that have more than one moon
+  { $match: { $expr: { $gt: [{ $size: "$planets.moons" }, 1] } } },
+
+  // Display relevant fields
+  { $project: { _id: 0, name: "$planets.name", moons: "$planets.moons" } },
+]);
+
+-> OUT:
+[
+  { name: 'Mars', moons: [ 'Phobos', 'Deimos' ] },
+  { name: 'Jupiter', moons: [ 'Io', 'Europa', 'Ganymede', 'Callisto' ] },
+  { name: 'Saturn', moons: [ 'Titan', 'Rhea' ] },
+  { name: 'Uranus', moons: [ 'Titania', 'Oberon' ] }
+]
+
+==============================================================================================
+9. Display all moons in solar system.
+
+IN ->:
+db.stars.aggregate([
+
+  // Choosing only Sun
+  { $match: { "name": "Sun" } } ,
+  
+  // Splitting planets list into separate star-planet objects
+  { $unwind: "$planets" },
+
+  // Splitting moons list into separate star-planet-moon objects
+  { $unwind: "$planets.moons" },
+  
+  // Merge moons into one list
+  { $group: { _id: null, moons: { $addToSet: "$planets.moons" } } },
+
+  // Display relevant fields
+  { $project: { _id: 0, moons: 1 } },
+]).next().moons
+
+-> OUT:
+[
+  'Europa',   'Triton',
+  'Moon',     'Rhea',
+  'Ganymede', 'Deimos',
+  'Callisto', 'Titan',
+  'Oberon',   'Io',
+  'Titania',  'Phobos'
+]
+
+==============================================================================================
+10. Select stars, that may transform into black hole after their death (weight > 4 solar masses).
+
+IN ->:
+db.stars.aggregate([
+
+  // Choosing only Sun
+  { $match: { "weight": { $gt: 4 } } } ,
+  
+  // Display relevant fields
+  { $project: { _id: 0, name: 1, weight: 1, radius: 1 } },
+])
+
+-> OUT:
+[
+  { name: 'R136a1', radius: 0.000672, weight: 200 },
+  { name: 'UY Scuti', radius: 0.0272, weight: 8 }
+]
+
+==============================================================================================
+11. Find all stars, that have only 'Terrestrial' planets.
+
+IN ->:
+// Find all stars that have records about 'Terrestrial' planets
+const first = db.stars.aggregate([
+  { $match: { "planets.type": { $in: ["Terrestrial"] } } },
+  { $project: { _id: 0, name: 1 } }
+]).toArray()
+
+// Find all stars that have records about other but 'Terrestrial' planets
+const second = db.stars.aggregate([
+  { $match: { "planets.type": { $in: ["Gas Giant", "Neptune-Like", "Super-Earth"] } } },
+  { $project: { _id: 0, name: 1 } }
+]).toArray()
+
+// Transform both to list of strings
+const names1 = first.map(item => item.name);
+const names2 = second.map(item => item.name);
+
+// Find difference between names1 and names2
+names1.filter(name => !names2.includes(name))
+
+-> OUT:
+[
+  'Alpha Andromedae',
+  'Triangulum Alpha',
+  'Sombrero Alpha',
+  'NGC 6744 Alpha'
+]
+
+==============================================================================================
+12. Count all objects (stars, black_holes, moons, planets) in 'Milky way'.
+
+IN ->:
+// Count stars and save value in 'n_stars' variable
+const n_stars = db.galaxies.aggregate([
+  // Join 'stars' from 'galaxies' using 'galaxy_id'
+  {
+    $lookup: {
+      from: "stars",
+      localField: "_id",
+      foreignField: "galaxy_id",
+      as: "stars"
+    }
+  },
+  { $match: { name: 'Milky Way' } },
+  { $project: { _id: 0, n_stars: {$size: "$stars"} } }
+]).next().n_stars
+
+// Count black holes and save value in 'n_black_holes' variable
+const n_black_holes = db.galaxies.aggregate([
+  // Join 'galaxies' from 'stars' using 'galaxy_id'
+  {
+    $lookup: {
+      from: "black_holes",
+      localField: "_id",
+      foreignField: "galaxy_id",
+      as: "black_holes"
+    }
+  },
+  { $match: { name: 'Milky Way' } },
+  { $project: { _id: 0, n_black_holes: {$size: "$black_holes"} } }
+]).next().n_black_holes
+
+// Count planets and save value in 'n_planets' variable
+const n_planets = db.galaxies.aggregate([
+  // Join 'galaxies' from 'stars' using 'galaxy_id'
+  {
+    $lookup: {
+      from: "stars",
+      localField: "_id",
+      foreignField: "galaxy_id",
+      as: "stars"
+    }
+  },
+  { $match: { name: 'Milky Way' } },
+  
+  // Splitting stars list into separate galaxy-star objects
+  { $unwind: "$stars" },
+
+  // Splitting planets list into separate galaxy-star-planet objects
+  { $unwind: "$stars.planets" },
+
+  // Merge moons into one list
+  { $group: { _id: null, planets: { $addToSet: "$stars.planets" } } },
+
+  // Display relevant fields
+  { $project: { _id: 0, n_planets: {$size: "$planets"} } },
+]).next().n_planets
+
+
+// Count moons and save value in 'n_moons' variable
+const n_moons = db.galaxies.aggregate([
+  // Join 'galaxies' from 'stars' using 'galaxy_id'
+  {
+    $lookup: {
+      from: "stars",
+      localField: "_id",
+      foreignField: "galaxy_id",
+      as: "stars"
+    }
+  },
+  { $match: { name: 'Milky Way' } },
+  
+  // Splitting stars list into separate galaxy-star objects
+  { $unwind: "$stars" },
+
+  // Splitting planets list into separate galaxy-star-planet objects
+  { $unwind: "$stars.planets" },
+
+  // Splitting moons list into separate galaxy-star-planet-moon objects
+  { $unwind: "$stars.planets.moons" },
+
+  // Merge moons into one list
+  { $group: { _id: null, moons: { $addToSet: "$stars.planets.moons" } } },
+
+  // Display relevant fields
+  { $project: { _id: 0, n_moons: {$size: "$moons"} } },
+]).next().n_moons
+
+print("Number of objects in Milky Way:", n_moons + n_stars + n_black_holes + n_planets)
+
+-> OUT:
+Number of objects in Milky Way: 30
+
+==============================================================================================
+13. Display corresponding star and moons of the heaviest gas giant.
+
+IN ->:
+db.stars.aggregate([
+  // Splitting planets list into separate star-planet objects
+  { $unwind: "$planets" },
+
+  // Choose only gas giants
+  {$match: {"planets.type": "Gas Giant"}},
+
+  // Sort list in descending order by planet's weight
+  {$sort: {"planets.weight": -1}},
+  
+  // Select planet with the biggest weight
+  {$limit: 1},
+
+  // Display relevant fields
+  { $project: { _id: 0, star: "$name", moons: "$planets.moons" } },
+])
+
+-> OUT:
+[ { star: 'Sun', moons: [ 'Io', 'Europa', 'Ganymede', 'Callisto' ] } ]
+
+==============================================================================================
+14. Display 3 smallets galaxies.
+
+IN ->:
+db.galaxies.aggregate([
+  // Sort list in ascending order by galaxies radius
+  { $sort: { radius: 1 } },
+
+  // Select 3 galaxies with the biggest radius
+  { $limit: 3 },
+
+  // Display relevant fields
+  { $project: { _id: 0, name: 1, radius: 1, type: 1} },
+])
+
+-> OUT:
+[
+  { name: 'NGC 6822', radius: 30000, type: [ 'Irregular' ] },
+  { name: 'Pinwheel', radius: 30000, type: [ 'Spiral' ] },
+  { name: 'Large Magellanic Cloud', radius: 32200, type: [ 'Irregular' ] }
+]
+
+==============================================================================================
+15. Try to find planets outside of Solar System, that are similar to Earth (use <radius*0.5, radius*1.5> as a criterion).
+
+IN ->:
+const earth_radius = db.stars.aggregate([
+  // Splitting planets list into separate star-planet objects
+  { $unwind: "$planets" },
+
+  // Select Earth
+  {$match: {"planets.name": "Earth"} },
+
+  // Display relevant fields
+  { $project: { _id: 0, radius: "$planets.radius" } },
+]).next().radius
+
+db.stars.aggregate([
+  // Splitting planets list into separate star-planet objects
+  { $unwind: "$planets" },
+
+  // Select not Earth
+  { $match: { "planets.name": { $ne: "Earth" }, "name": { $ne: "Sun" } } },
+
+  { $match: { "planets.radius": { $gt: earth_radius * 0.5 } } },
+  { $match: { "planets.radius": { $lt: earth_radius * 1.5 } } },
+
+  // Display relevant fields
+  { $project: { _id: 0, located_in: "$name", planets: 1 } },
+])
+
+-> OUT:
+[
+  {
+    planets: {
+      name: 'Kepler-22B',
+      radius: 1.87e-8,
+      weight: 0.000086565,
+      type: 'Terrestrial',
+      moons: []
+    },
+    located_in: 'Kepler-22'
+  }
+]
+
+==============================================================================================

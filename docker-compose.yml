@@ -1,0 +1,106 @@
+services:
+
+# ======================================================================
+# = Server                                                             =
+# ======================================================================
+  cfgsvr:
+    image: mongo:latest
+    container_name: cfgsvr
+    command: mongod --port 27017 --configsvr --replSet rs-config-server --dbpath /data/db  --config /config/mongod.conf
+    volumes:
+      - ./scripts:/scripts
+      - ./config:/config
+      - ./data/cfgsvr:/data/db
+    ports:
+      - 27119:27017
+    links:
+      - shard01-a
+      - shard02-a
+
+# ======================================================================
+# = Shards                                                             =
+# ======================================================================
+  ## Shard 01
+  shard01-a:
+    image: mongo:latest
+    container_name: shard01-a
+    command: mongod --port 27017 --shardsvr --replSet rs-shard-01 --dbpath /data/db --config /config/mongod.conf
+    volumes:
+      - ./scripts:/scripts
+      - ./config:/config
+      - ./data/shard01-a:/data/db
+    ports:
+      - 27122:27017
+    links:
+      - shard01-b
+      - shard01-c
+  shard01-b:
+    image: mongo:latest
+    container_name: shard01-b
+    command: mongod --port 27017 --shardsvr --replSet rs-shard-01 --dbpath /data/db --config /config/mongod.conf
+    volumes:
+      - ./scripts:/scripts
+      - ./config:/config
+      - ./data/shard01-b:/data/db
+    ports:
+      - 27123:27017
+  shard01-c:
+    image: mongo:latest
+    container_name: shard01-c
+    command: mongod --port 27017 --shardsvr --replSet rs-shard-01 --dbpath /data/db --config /config/mongod.conf
+    volumes:
+      - ./scripts:/scripts
+      - ./config:/config
+      - ./data/shard01-c:/data/db
+    ports:
+      - 27124:27017
+
+  ## Shard 02
+  shard02-a:
+    image: mongo:latest
+    container_name: shard02-a
+    command: mongod --port 27017 --shardsvr --replSet rs-shard-02 --dbpath /data/db --config /config/mongod.conf
+    volumes:
+      - ./scripts:/scripts
+      - ./config:/config
+      - ./data/shard02-a:/data/db
+    ports:
+      - 27125:27017
+    links:
+      - shard02-b
+      - shard02-c
+  shard02-b:
+    image: mongo:latest
+    container_name: shard02-b
+    command: mongod --port 27017 --shardsvr --replSet rs-shard-02 --dbpath /data/db --config /config/mongod.conf
+    volumes:
+      - ./scripts:/scripts
+      - ./config:/config
+      - ./data/shard02-b:/data/db
+    ports:
+      - 27126:27017
+  shard02-c:
+    image: mongo:latest
+    container_name: shard02-c
+    command: mongod --port 27017 --shardsvr --replSet rs-shard-02 --dbpath /data/db --config /config/mongod.conf
+    volumes:
+      - ./scripts:/scripts
+      - ./config:/config
+      - ./data/shard02-c:/data/db
+    ports:
+      - 27127:27017
+
+      
+# ======================================================================
+# = Router                                                             =
+# ======================================================================
+  router:
+    image: mongo:latest
+    container_name: router
+    command: mongos --port 27017 --configdb rs-config-server/cfgsvr:27017 --bind_ip_all --config /config/router.conf
+    ports:
+      - 27117:27017
+    volumes:
+      - ./scripts:/scripts
+      - ./config:/config
+      - ./data/router:/data/db
